@@ -201,12 +201,12 @@ String HexData::hexLine(uint32_t address, uint32_t& addressHighWord, std::vector
                 checksum += address & 0xFF;
                 
                 for (size_t x = 0; x < i; x++) {
-                    String byteStr = String(dataline[0], HEX);
+                    String byteStr = String(dataline[x], HEX);
                     if (byteStr.length() == 1) byteStr = "0" + byteStr;
                     s += byteStr;
-                    checksum += dataline[0];
-                    dataline.erase(dataline.begin());
+                    checksum += dataline[x];
                 }
+                dataline.erase(dataline.begin(), dataline.begin() + i);
                 checksum = ~checksum;
                 checksum++;
                 String checksumStr = String(checksum & 0xFF, HEX);
