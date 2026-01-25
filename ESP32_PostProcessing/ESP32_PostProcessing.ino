@@ -140,9 +140,6 @@ void processHexFile() {
     baseAddr *= 2;
     length *= 2;
     
-    uint8_t testByte;
-    hexData.readByte(0x55E00, testByte);
-    
     hexData.fill32(baseAddr, baseAddr + length, 0x00FFFFFF);
     lv_bar_set_value(progressBar, 50, LV_ANIM_ON);
     lv_task_handler();

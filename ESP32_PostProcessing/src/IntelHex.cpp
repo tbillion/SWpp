@@ -5,6 +5,15 @@ static const int HEX_ADDRESS_OFFSET = 3;
 static const int HEX_RECORD_TYPE_OFFSET = 7;
 static const int HEX_DATA_OFFSET = 9;
 
+static String formatHex(uint32_t value, int width) {
+    String hex = String(value, HEX);
+    hex.toUpperCase();
+    while (hex.length() < (size_t)width) {
+        hex = "0" + hex;
+    }
+    return hex;
+}
+
 HexData::HexData() {
     memory.clear();
     warnings = "";
@@ -193,39 +202,32 @@ String HexData::hexLine(uint32_t address, uint32_t& addressHighWord, std::vector
             if (i != 0) {
                 uint32_t checksum = 0;
                 s += ":";
-                s += String(i, HEX).length() == 1 ? "0" + String(i, HEX) : String(i, HEX);
-                s += String((address & 0xFFFF), HEX).length() < 4 ? String("0000").substring(0, 4 - String((address & 0xFFFF), HEX).length()) + String((address & 0xFFFF), HEX) : String((address & 0xFFFF), HEX);
+                s += formatHex(i, 2);
+                s += formatHex(address & 0xFFFF, 4);
                 s += "00";
                 checksum += i;
                 checksum += address >> 8;
                 checksum += address & 0xFF;
                 
                 for (size_t x = 0; x < i; x++) {
-                    String byteStr = String(dataline[x], HEX);
-                    if (byteStr.length() == 1) byteStr = "0" + byteStr;
-                    s += byteStr;
+                    s += formatHex(dataline[x], 2);
                     checksum += dataline[x];
                 }
                 dataline.erase(dataline.begin(), dataline.begin() + i);
                 checksum = ~checksum;
                 checksum++;
-                String checksumStr = String(checksum & 0xFF, HEX);
-                if (checksumStr.length() == 1) checksumStr = "0" + checksumStr;
-                s += checksumStr;
+                s += formatHex(checksum & 0xFF, 2);
                 s += "\n";
             }
             {
                 uint32_t checksum = 0;
                 s += ":02000004";
-                String addrStr = String((address >> 16), HEX);
-                while (addrStr.length() < 4) addrStr = "0" + addrStr;
-                s += addrStr;
+                s += formatHex(address >> 16, 4);
                 checksum = 2 + 4 + ((address >> 16) & 0xFF) + ((address >> 24) & 0xFF);
                 checksum = ~checksum;
                 checksum++;
-                String checksumStr = String(checksum & 0xFF, HEX);
-                if (checksumStr.length() == 1) checksumStr = "0" + checksumStr;
-                s += checksumStr + "\n";
+                s += formatHex(checksum & 0xFF, 2);
+                s += "\n";
                 addressHighWord = address >> 16;
             }
         }
@@ -234,27 +236,20 @@ String HexData::hexLine(uint32_t address, uint32_t& addressHighWord, std::vector
     if (dataline.size() > 0) {
         uint32_t checksum = 0;
         s += ":";
-        String lenStr = String(dataline.size(), HEX);
-        if (lenStr.length() == 1) lenStr = "0" + lenStr;
-        s += lenStr;
-        String addrStr = String((address & 0xFFFF), HEX);
-        while (addrStr.length() < 4) addrStr = "0" + addrStr;
-        s += addrStr + "00";
+        s += formatHex(dataline.size(), 2);
+        s += formatHex(address & 0xFFFF, 4);
+        s += "00";
         checksum += dataline.size();
         checksum += address >> 8;
         checksum += address & 0xFF;
         
         for (uint8_t b : dataline) {
-            String byteStr = String(b, HEX);
-            if (byteStr.length() == 1) byteStr = "0" + byteStr;
-            s += byteStr;
+            s += formatHex(b, 2);
             checksum += b;
         }
         checksum = ~checksum;
         checksum++;
-        String checksumStr = String(checksum & 0xFF, HEX);
-        if (checksumStr.length() == 1) checksumStr = "0" + checksumStr;
-        s += checksumStr;
+        s += formatHex(checksum & 0xFF, 2);
         s += "\n";
     }
     return s;
@@ -310,7 +305,7 @@ bool HexData::toSW18BootloaderArray(FsFile& output, uint32_t inclusiveStartAddre
     
     output.println("#include <stdint.h>");
     output.print("uint32_t appStartAddress = 0x");
-    output.print(String(inclusiveStartAddress, HEX));
+    output.print(formatHex(inclusiveStartAddress, 8));
     output.println(";");
     output.println("const uint32_t appImage[] = {");
     
@@ -324,7 +319,7 @@ bool HexData::toSW18BootloaderArray(FsFile& output, uint32_t inclusiveStartAddre
     
     for (uint32_t i = inclusiveStartAddress + 4; i < exclusiveEndAddress; i += 4) {
         if (!readByte(i, b0) || !readByte(i + 1, b1) || !readByte(i + 2, b2)) {
-            warnings += "Failed to read address data at 0x" + String(i, HEX) + "\n";
+            warnings += "Failed to read address data at 0x" + formatHex(i, 8) + "\n";
             return false;
         }
         uint32_t newData = b0 + ((uint32_t)b1 << 8) + ((uint32_t)b2 << 16);
@@ -333,15 +328,11 @@ bool HexData::toSW18BootloaderArray(FsFile& output, uint32_t inclusiveStartAddre
             currentData += (1 << 24);
         } else {
             output.print("0x");
-            String dataStr = String(currentData & 0xFFFFFFFF, HEX);
-            while (dataStr.length() < 8) dataStr = "0" + dataStr;
-            output.print(dataStr);
+            output.print(formatHex(currentData & 0xFFFFFFFF, 8));
             output.print(",");
             if (commentAddresses) {
                 output.print(" // ");
-                String addrStr = String(rleStartAddress, HEX);
-                while (addrStr.length() < 8) addrStr = "0" + addrStr;
-                output.print(addrStr);
+                output.print(formatHex(rleStartAddress, 8));
             }
             output.println();
             rleStartAddress = i;
@@ -350,15 +341,11 @@ bool HexData::toSW18BootloaderArray(FsFile& output, uint32_t inclusiveStartAddre
     }
     
     output.print("0x");
-    String dataStr = String(currentData & 0xFFFFFFFF, HEX);
-    while (dataStr.length() < 8) dataStr = "0" + dataStr;
-    output.print(dataStr);
+    output.print(formatHex(currentData & 0xFFFFFFFF, 8));
     output.print(",");
     if (commentAddresses) {
         output.print(" // ");
-        String addrStr = String(rleStartAddress, HEX);
-        while (addrStr.length() < 8) addrStr = "0" + addrStr;
-        output.print(addrStr);
+        output.print(formatHex(rleStartAddress, 8));
     }
     output.println();
     output.println("};");
@@ -426,11 +413,9 @@ bool HexData::twoColumn(FsFile& output) {
     if (!output) return false;
     
     for (auto const& pair : memory) {
-        output.print(String(pair.first, HEX));
+        output.print(formatHex(pair.first, 0));
         output.print(" ");
-        String byteStr = String(pair.second, HEX);
-        if (byteStr.length() == 1) byteStr = "0" + byteStr;
-        output.println(byteStr);
+        output.println(formatHex(pair.second, 2));
     }
     return true;
 }
