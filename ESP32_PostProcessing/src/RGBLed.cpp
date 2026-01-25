@@ -47,8 +47,8 @@ void RGBLed::setStatus(LEDStatus status) {
 void RGBLed::update() {
     if (breathing) {
         breathPhase += breathSpeed;
-        if (breathPhase > TWO_PI) {
-            breathPhase -= TWO_PI;
+        if (breathPhase > (2.0f * M_PI)) {
+            breathPhase -= (2.0f * M_PI);
         }
         
         switch(currentStatus) {

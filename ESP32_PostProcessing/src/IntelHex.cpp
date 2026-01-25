@@ -274,7 +274,7 @@ bool HexData::toHexFileString(FsFile& output, uint32_t inclusiveStartAddress, ui
                 address = i;
             }
             dataline.push_back(it->second);
-            if (dataline.size() >= 16 || (((address + i) & 0xF) == 0xF)) {
+            if (dataline.size() >= 16 || ((i & 0xF) == 0xF)) {
                 String line = hexLine(address, addressHighWord, dataline);
                 output.print(line);
                 dataline.clear();
