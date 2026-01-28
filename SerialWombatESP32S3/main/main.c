@@ -19,6 +19,7 @@
 #include "hw_abstraction/esp32_gpio.h"
 #include "hw_abstraction/esp32_timers.h"
 #include "hw_abstraction/esp32_uart.h"
+#include "hw_abstraction/esp32_i2c.h"
 
 static const char* TAG = "SW_MAIN";
 
@@ -312,6 +313,110 @@ void test_uart_stats(void) {
     ESP_LOGI(TAG, "UART statistics test complete");
 }
 
+/**
+ * @brief I2C packet callback (for testing)
+ * 
+ * Simple echo callback that returns the received packet
+ */
+static bool test_i2c_callback(const uint8_t* rx_packet, uint8_t* tx_packet) {
+    // Echo the packet back (for testing)
+    memcpy(tx_packet, rx_packet, ESP32_I2C_PACKET_SIZE);
+    
+    // Log the received packet
+    ESP_LOGI(TAG, "I2C RX: %02X %02X %02X %02X %02X %02X %02X %02X",
+             rx_packet[0], rx_packet[1], rx_packet[2], rx_packet[3],
+             rx_packet[4], rx_packet[5], rx_packet[6], rx_packet[7]);
+    
+    return true; // Response ready
+}
+
+/**
+ * @brief Test I2C initialization and address selection
+ */
+void test_i2c_init(void) {
+    ESP_LOGI(TAG, "Testing I2C initialization");
+    
+    if (ESP32_I2C_IsInitialized()) {
+        uint8_t addr = ESP32_I2C_GetAddress();
+        uint8_t addr_offset = ESP32_I2C_ReadAddressPins();
+        ESP32_I2C_Tier_t tier = ESP32_I2C_GetTier();
+        
+        ESP_LOGI(TAG, "  I2C: Initialized (SDA=%d, SCL=%d)",
+                 ESP32_I2C_SDA_PIN, ESP32_I2C_SCL_PIN);
+        ESP_LOGI(TAG, "  Address pins: GPIO %d-%d",
+                 ESP32_I2C_ADDR_A0_PIN, ESP32_I2C_ADDR_A3_PIN);
+        ESP_LOGI(TAG, "  Address offset: 0x%X", addr_offset);
+        ESP_LOGI(TAG, "  Slave address: 0x%02X", addr);
+        ESP_LOGI(TAG, "  Implementation: Tier %d (1=HW, 2=Opt, 3=SW)", tier);
+    } else {
+        ESP_LOGW(TAG, "  I2C: NOT initialized");
+    }
+    
+    ESP_LOGI(TAG, "I2C initialization test complete");
+}
+
+/**
+ * @brief Test I2C slave mode (waits for host requests)
+ */
+void test_i2c_slave(void) {
+    ESP_LOGI(TAG, "Starting I2C slave test");
+    ESP_LOGI(TAG, "Listening for I2C master requests (10 seconds)...");
+    ESP_LOGI(TAG, "Connect I2C master and send 8-byte packets");
+    
+    // Set callback for packet processing
+    ESP32_I2C_SetPacketCallback(test_i2c_callback);
+    
+    // Monitor for 10 seconds
+    uint64_t start_time = esp_timer_get_time();
+    uint32_t last_rx_count = 0;
+    
+    while ((esp_timer_get_time() - start_time) < 10000000) {
+        // Check for packets
+        if (ESP32_I2C_HasPacket()) {
+            uint8_t packet[ESP32_I2C_PACKET_SIZE];
+            if (ESP32_I2C_ReadPacket(packet)) {
+                ESP_LOGI(TAG, "Packet received via buffer check");
+            }
+        }
+        
+        // Check stats periodically
+        ESP32_I2C_Stats_t stats;
+        ESP32_I2C_GetStats(&stats);
+        if (stats.packets_received != last_rx_count) {
+            ESP_LOGI(TAG, "Packets RX: %lu, TX: %lu",
+                     stats.packets_received, stats.packets_transmitted);
+            last_rx_count = stats.packets_received;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    ESP_LOGI(TAG, "I2C slave test complete");
+}
+
+/**
+ * @brief Test I2C statistics
+ */
+void test_i2c_stats(void) {
+    ESP_LOGI(TAG, "Testing I2C statistics");
+    
+    ESP32_I2C_Stats_t stats;
+    ESP32_I2C_GetStats(&stats);
+    
+    ESP_LOGI(TAG, "I2C statistics:");
+    ESP_LOGI(TAG, "  Packets RX: %lu", stats.packets_received);
+    ESP_LOGI(TAG, "  Packets TX: %lu", stats.packets_transmitted);
+    ESP_LOGI(TAG, "  Incomplete: %lu", stats.incomplete_packets);
+    ESP_LOGI(TAG, "  Overflows: %lu", stats.buffer_overflows);
+    ESP_LOGI(TAG, "  ACK errors: %lu", stats.ack_errors);
+    ESP_LOGI(TAG, "  Bus errors: %lu", stats.bus_errors);
+    ESP_LOGI(TAG, "  Timeouts: %lu", stats.timeouts);
+    ESP_LOGI(TAG, "  Tier switches: %lu", stats.tier_switches);
+    ESP_LOGI(TAG, "  Current tier: %d (1=HW, 2=Opt, 3=SW)", stats.current_tier);
+    
+    ESP_LOGI(TAG, "I2C statistics test complete");
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Serial Wombat ESP32-S3 Port");
@@ -348,6 +453,14 @@ void app_main(void)
     ret = ESP32_UART_Init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "UART initialization failed!");
+        return;
+    }
+    
+    // Initialize I2C subsystem
+    ESP_LOGI(TAG, "Initializing I2C subsystem...");
+    ret = ESP32_I2C_Init() ? ESP_OK : ESP_FAIL;
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "I2C initialization failed!");
         return;
     }
     
@@ -390,10 +503,23 @@ void app_main(void)
     test_uart_stats();
     ESP_LOGI(TAG, "");
     
+    // Run I2C tests
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "=== I2C TESTS ===");
+    
+    test_i2c_init();
+    ESP_LOGI(TAG, "");
+    
+    test_i2c_slave();
+    ESP_LOGI(TAG, "");
+    
+    test_i2c_stats();
+    ESP_LOGI(TAG, "");
+    
     ESP_LOGI(TAG, "================================");
     ESP_LOGI(TAG, "All HAL tests complete!");
-    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART complete (42%%)");
-    ESP_LOGI(TAG, "Next: I2C abstraction (esp32_i2c.c/h)");
+    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART + I2C (56%%)");
+    ESP_LOGI(TAG, "Next: ADC abstraction (esp32_adc.c/h)");
     ESP_LOGI(TAG, "Note: Build with ESP-IDF 5.x to test on hardware");
     ESP_LOGI(TAG, "  $ idf.py build flash monitor");
     
