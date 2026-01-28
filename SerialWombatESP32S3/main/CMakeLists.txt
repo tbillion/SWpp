@@ -7,8 +7,8 @@ set(COMPONENT_SRCS
     "hw_abstraction/esp32_timers.c"
     "hw_abstraction/esp32_uart.c"
     "hw_abstraction/esp32_i2c.c"
+    "hw_abstraction/esp32_adc.c"
     # To be added as implemented:
-    # "hw_abstraction/esp32_adc.c"
     # "hw_abstraction/esp32_dma.c"
     # "hw_abstraction/esp32_system.c"
     # "core/main_loop.c"

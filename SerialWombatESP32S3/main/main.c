@@ -20,6 +20,7 @@
 #include "hw_abstraction/esp32_timers.h"
 #include "hw_abstraction/esp32_uart.h"
 #include "hw_abstraction/esp32_i2c.h"
+#include "hw_abstraction/esp32_adc.h"
 
 static const char* TAG = "SW_MAIN";
 
@@ -417,6 +418,114 @@ void test_i2c_stats(void) {
     ESP_LOGI(TAG, "I2C statistics test complete");
 }
 
+/**
+ * @brief Test ADC initialization and configuration
+ */
+void test_adc_init(void) {
+    ESP_LOGI(TAG, "Starting ADC initialization test...");
+    
+    // Initialize with default configuration
+    bool ret = ESP32_ADC_Init(NULL);
+    if (!ret) {
+        ESP_LOGE(TAG, "ADC initialization failed!");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "ADC subsystem initialized");
+    ESP_LOGI(TAG, "Configuration:");
+    ESP_LOGI(TAG, "  Samples for averaging: %d", ESP32_ADC_GetSamples());
+    ESP_LOGI(TAG, "  ADC1 channels: 10 (pins 0-8)");
+    ESP_LOGI(TAG, "  ADC2 channels: 8 (pins 9-16, WiFi conflict warning)");
+    ESP_LOGI(TAG, "  Pin 17 (GPIO21): Digital only, no ADC");
+    
+    // Display channel information for first few pins
+    ESP_LOGI(TAG, "Channel information (first 5 pins):");
+    for (uint8_t pin = 0; pin < 5; pin++) {
+        const ESP32_ADC_ChannelInfo_t* info = ESP32_ADC_GetChannelInfo(pin);
+        if (info) {
+            ESP_LOGI(TAG, "  Pin %d: GPIO %d, %s, %s", 
+                     pin, info->gpio_num, info->name,
+                     info->available ? "Available" : "N/A");
+        }
+    }
+    
+    ESP_LOGI(TAG, "ADC initialization test complete");
+}
+
+/**
+ * @brief Test ADC reading on all channels
+ */
+void test_adc_read(void) {
+    ESP_LOGI(TAG, "Starting ADC read test (all 18 channels)...");
+    ESP_LOGI(TAG, "NOTE: Connect voltages to pins for meaningful readings");
+    ESP_LOGI(TAG, "      Floating pins will show random/noisy values");
+    
+    if (!ESP32_ADC_IsInitialized()) {
+        ESP_LOGE(TAG, "ADC not initialized!");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "Reading all channels:");
+    ESP_LOGI(TAG, "Pin | GPIO | Raw(12b) | Scaled(16b) | Voltage  | Unit");
+    ESP_LOGI(TAG, "----|------|----------|-------------|----------|------");
+    
+    for (uint8_t pin = 0; pin < ESP32_ADC_TOTAL_PINS; pin++) {
+        if (!ESP32_ADC_IsAvailable(pin)) {
+            const ESP32_ADC_ChannelInfo_t* info = ESP32_ADC_GetChannelInfo(pin);
+            ESP_LOGI(TAG, "%3d | %4d | %8s | %11s | %8s | N/A (digital only)", 
+                     pin, info->gpio_num, "-", "-", "-");
+            continue;
+        }
+        
+        uint16_t raw = ESP32_ADC_ReadRaw(pin);
+        uint16_t scaled = ESP32_ADC_Read16Bit(pin);
+        uint32_t mv = ESP32_ADC_ReadMillivolts(pin);
+        float volts = mv / 1000.0f;
+        
+        const ESP32_ADC_ChannelInfo_t* info = ESP32_ADC_GetChannelInfo(pin);
+        adc_unit_t unit = ESP32_ADC_GetUnit(pin);
+        const char* unit_str = (unit == ADC_UNIT_1) ? "ADC1" : "ADC2";
+        
+        ESP_LOGI(TAG, "%3d | %4d | %8d | %11d | %5.3fV | %s", 
+                 pin, info->gpio_num, raw, scaled, volts, unit_str);
+        
+        // Small delay between readings
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "ADC read test complete");
+    ESP_LOGI(TAG, "Note: ADC2 channels (pins 9-16) may conflict with WiFi when enabled");
+}
+
+/**
+ * @brief Test ADC statistics
+ */
+void test_adc_stats(void) {
+    ESP_LOGI(TAG, "Starting ADC statistics test...");
+    
+    if (!ESP32_ADC_IsInitialized()) {
+        ESP_LOGE(TAG, "ADC not initialized!");
+        return;
+    }
+    
+    ESP32_ADC_Stats_t stats;
+    ESP32_ADC_GetStats(&stats);
+    
+    ESP_LOGI(TAG, "ADC Statistics:");
+    ESP_LOGI(TAG, "  ADC1 reads: %lu", stats.reads_adc1);
+    ESP_LOGI(TAG, "  ADC2 reads: %lu", stats.reads_adc2);
+    ESP_LOGI(TAG, "  ADC1 errors: %lu", stats.errors_adc1);
+    ESP_LOGI(TAG, "  ADC2 errors: %lu", stats.errors_adc2);
+    ESP_LOGI(TAG, "  Overruns: %lu", stats.overruns);
+    ESP_LOGI(TAG, "  Underruns: %lu", stats.underruns);
+    ESP_LOGI(TAG, "  Calibration: %s", stats.calibration_valid ? "Valid" : "Invalid");
+    ESP_LOGI(TAG, "  ADC2 WiFi conflict: %s", ESP32_ADC_IsADC2Conflicted() ? "Yes" : "No");
+    
+    ESP_LOGI(TAG, "ADC statistics test complete");
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Serial Wombat ESP32-S3 Port");
@@ -516,10 +625,23 @@ void app_main(void)
     test_i2c_stats();
     ESP_LOGI(TAG, "");
     
+    // Run ADC tests
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "=== ADC TESTS ===");
+    
+    test_adc_init();
+    ESP_LOGI(TAG, "");
+    
+    test_adc_read();
+    ESP_LOGI(TAG, "");
+    
+    test_adc_stats();
+    ESP_LOGI(TAG, "");
+    
     ESP_LOGI(TAG, "================================");
     ESP_LOGI(TAG, "All HAL tests complete!");
-    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART + I2C (56%%)");
-    ESP_LOGI(TAG, "Next: ADC abstraction (esp32_adc.c/h)");
+    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART + I2C + ADC (70%%)");
+    ESP_LOGI(TAG, "Next: DMA abstraction (esp32_dma.c/h)");
     ESP_LOGI(TAG, "Note: Build with ESP-IDF 5.x to test on hardware");
     ESP_LOGI(TAG, "  $ idf.py build flash monitor");
     
