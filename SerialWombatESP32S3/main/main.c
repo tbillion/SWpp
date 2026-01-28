@@ -21,6 +21,7 @@
 #include "hw_abstraction/esp32_uart.h"
 #include "hw_abstraction/esp32_i2c.h"
 #include "hw_abstraction/esp32_adc.h"
+#include "hw_abstraction/esp32_dma.h"
 
 static const char* TAG = "SW_MAIN";
 
@@ -526,6 +527,122 @@ void test_adc_stats(void) {
     ESP_LOGI(TAG, "ADC statistics test complete");
 }
 
+/**
+ * @brief Test DMA initialization
+ */
+void test_dma_init(void) {
+    ESP_LOGI(TAG, "Testing DMA initialization...");
+    
+    ESP32_DMA_Config_t config = ESP32_DMA_DEFAULT_CONFIG();
+    config.buffer_size = 1024;  // 1024 samples
+    config.auto_start = false;
+    
+    esp_err_t ret = ESP32_DMA_Init(&config);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "DMA init failed: %d", ret);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "DMA subsystem initialized");
+    ESP_LOGI(TAG, "Configuration:");
+    ESP_LOGI(TAG, "  Buffer size: %lu samples", ESP32_DMA_GetCapacity());
+    ESP_LOGI(TAG, "  Sample rate: 57.6kHz (17µs period)");
+    ESP_LOGI(TAG, "  GPIO pins: 22 (all pins sampled together)");
+    ESP_LOGI(TAG, "  Buffer capacity: ~%.1f ms", 
+             (float)ESP32_DMA_GetCapacity() / 57600.0f * 1000.0f);
+    ESP_LOGI(TAG, "  Memory: %lu bytes", 
+             ESP32_DMA_GetCapacity() * sizeof(ESP32_DMA_Sample_t));
+    
+    ESP_LOGI(TAG, "DMA initialization test complete");
+}
+
+/**
+ * @brief Test DMA sampling
+ */
+void test_dma_sampling(void) {
+    ESP_LOGI(TAG, "Testing DMA sampling...");
+    
+    if (!ESP32_DMA_IsInitialized()) {
+        ESP_LOGE(TAG, "DMA not initialized");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Starting DMA sampling for 2 seconds...");
+    
+    // Start sampling
+    esp_err_t ret = ESP32_DMA_Start();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start sampling: %d", ret);
+        return;
+    }
+    
+    // Sample for 2 seconds
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    // Stop sampling
+    ESP32_DMA_Stop();
+    
+    // Get statistics
+    ESP32_DMA_Stats_t stats;
+    ESP32_DMA_GetStats(&stats);
+    
+    ESP_LOGI(TAG, "Sampling complete:");
+    ESP_LOGI(TAG, "  Samples captured: %llu", stats.samples_captured);
+    ESP_LOGI(TAG, "  Expected: ~115200 (2s × 57.6kHz)");
+    ESP_LOGI(TAG, "  Buffer overflows: %llu (expected with 1024 buffer)", stats.buffer_overflows);
+    ESP_LOGI(TAG, "  Actual rate: %.1f kHz", stats.sample_rate_hz / 1000.0f);
+    ESP_LOGI(TAG, "  Buffer usage: %.1f%%", ESP32_DMA_GetBufferUsage());
+    ESP_LOGI(TAG, "  Available samples: %lu", stats.buffer_occupancy);
+    
+    ESP_LOGI(TAG, "DMA sampling test complete");
+}
+
+/**
+ * @brief Test DMA buffer reading
+ */
+void test_dma_buffer(void) {
+    ESP_LOGI(TAG, "Testing DMA buffer reading...");
+    
+    if (!ESP32_DMA_IsInitialized()) {
+        ESP_LOGE(TAG, "DMA not initialized");
+        return;
+    }
+    
+    size_t available = ESP32_DMA_Available();
+    ESP_LOGI(TAG, "Samples available in buffer: %lu", available);
+    
+    if (available == 0) {
+        ESP_LOGI(TAG, "Buffer empty (no samples to read)");
+        return;
+    }
+    
+    // Read up to 10 samples
+    size_t to_read = (available < 10) ? available : 10;
+    ESP_LOGI(TAG, "Reading %lu samples from buffer:", to_read);
+    
+    for (size_t i = 0; i < to_read; i++) {
+        ESP32_DMA_Sample_t sample;
+        esp_err_t ret = ESP32_DMA_Read(&sample);
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "  Sample %lu: Pins=0x%06lX, Time=%llu µs",
+                     i, sample.gpio_state & 0x3FFFFF, sample.timestamp_us);
+            
+            // Show first few pin states
+            if (i == 0) {
+                ESP_LOGI(TAG, "    Pin states (first 5):");
+                for (uint8_t pin = 0; pin < 5; pin++) {
+                    uint8_t state = ESP32_DMA_GetPinState(&sample, pin);
+                    ESP_LOGI(TAG, "      Pin %u: %u", pin, state);
+                }
+            }
+        } else {
+            ESP_LOGE(TAG, "  Failed to read sample %lu", i);
+        }
+    }
+    
+    ESP_LOGI(TAG, "DMA buffer reading test complete");
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Serial Wombat ESP32-S3 Port");
@@ -638,10 +755,23 @@ void app_main(void)
     test_adc_stats();
     ESP_LOGI(TAG, "");
     
+    // Run DMA tests
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "=== DMA TESTS ===");
+    
+    test_dma_init();
+    ESP_LOGI(TAG, "");
+    
+    test_dma_sampling();
+    ESP_LOGI(TAG, "");
+    
+    test_dma_buffer();
+    ESP_LOGI(TAG, "");
+    
     ESP_LOGI(TAG, "================================");
     ESP_LOGI(TAG, "All HAL tests complete!");
-    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART + I2C + ADC (70%%)");
-    ESP_LOGI(TAG, "Next: DMA abstraction (esp32_dma.c/h)");
+    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART + I2C + ADC + DMA (84%%)");
+    ESP_LOGI(TAG, "Next: System abstraction (esp32_system.c/h) - Final HAL component!");
     ESP_LOGI(TAG, "Note: Build with ESP-IDF 5.x to test on hardware");
     ESP_LOGI(TAG, "  $ idf.py build flash monitor");
     
