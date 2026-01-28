@@ -9,8 +9,8 @@ set(COMPONENT_SRCS
     "hw_abstraction/esp32_i2c.c"
     "hw_abstraction/esp32_adc.c"
     "hw_abstraction/esp32_dma.c"
-    # To be added as implemented:
-    # "hw_abstraction/esp32_system.c"
+    "hw_abstraction/esp32_system.c"
+    # To be added in Phase 3:
     # "core/main_loop.c"
     # "core/protocol.c"
     # "core/pinRegisters.c"
