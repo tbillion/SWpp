@@ -4,8 +4,8 @@
 set(COMPONENT_SRCS
     "main.c"
     "hw_abstraction/esp32_gpio.c"
+    "hw_abstraction/esp32_timers.c"
     # To be added as implemented:
-    # "hw_abstraction/esp32_timers.c"
     # "hw_abstraction/esp32_uart.c"
     # "hw_abstraction/esp32_i2c.c"
     # "hw_abstraction/esp32_adc.c"
