@@ -12,8 +12,7 @@ set(COMPONENT_SRCS
     "hw_abstraction/esp32_system.c"
     # Phase 3: Core Firmware
     "core/protocol.c"
-    # To be added in Phase 3 Step 4+:
-    # "core/pinRegisters.c"
+    "core/pinRegisters.c"
 )
 
 set(COMPONENT_ADD_INCLUDEDIRS

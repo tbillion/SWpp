@@ -10,6 +10,7 @@
  */
 
 #include "protocol.h"
+#include "pinRegisters.h"
 #include "../hw_abstraction/esp32_uart.h"
 #include "../hw_abstraction/esp32_i2c.h"
 #include <string.h>
@@ -84,68 +85,102 @@ void uint16ToAscii5(uint16_t value, uint8_t* buffer) {
 // ============================================================================
 
 static void ProcessPinModeCommand(uint8_t command) {
-    // TODO: Implement in Step 4
-    // Extract pin and mode
-    uint8_t pin = GET_PIN_FROM_MODE_CMD(command);
-    uint8_t mode = GET_MODE_FROM_CMD(command);
+    // Pin mode configuration: command byte IS the mode
+    // Rxbuffer[1-7] contains the configuration for this mode
+    uint8_t pin = Rxbuffer[1];  // Pin number is first config byte
+    uint8_t mode = command;      // Command byte is the mode
     
-    // For now, just echo with padding
-    for (int i = 1; i < SW_PACKET_SIZE; i++) {
-        Txbuffer[i] = SW_RESYNC_CHAR;
+    // Set pin mode with configuration
+    if (SW_PinRegisters_SetMode(pin, mode, &Rxbuffer[1]) == SW_OK) {
+        // Success - echo command and return pin info
+        Txbuffer[0] = command;
+        Txbuffer[1] = pin;
+        Txbuffer[2] = mode;
+        // Pad remaining bytes
+        for (int i = 3; i < SW_PACKET_SIZE; i++) {
+            Txbuffer[i] = SW_RESYNC_CHAR;
+        }
+        printf("[Protocol] Set pin %d to mode 0x%02X\n", pin, mode);
+    } else {
+        SW_Protocol_SendError(SW_ERROR_INVALID_PIN);
+        Stats.invalid_commands++;
     }
-    
-    printf("[Protocol] Pin mode command: pin=%d, mode=%d (not yet implemented)\n", pin, mode);
 }
 
 static void ProcessReadPublicData(uint8_t command) {
-    // TODO: Implement in Step 4
-    // Extract pin number
+    // Read public data from pin's buffer
+    // Command: 0x81-0x8F (pin 1-15)
     uint8_t pin = command - READ_PUBLIC_DATA_0;
+    uint16_t index = (Rxbuffer[1] << 8) | Rxbuffer[2];
+    uint8_t data[5];  // Read 5 bytes
     
-    // For now, return zeros with padding
-    Txbuffer[1] = 0x00;
-    Txbuffer[2] = 0x00;
-    for (int i = 3; i < SW_PACKET_SIZE; i++) {
-        Txbuffer[i] = SW_RESYNC_CHAR;
+    if (SW_PinRegisters_ReadPublicData(pin, index, data, 5) == SW_OK) {
+        // Success - return data
+        Txbuffer[0] = command;
+        memcpy(&Txbuffer[1], data, 5);
+        // Pad remaining bytes
+        Txbuffer[6] = SW_RESYNC_CHAR;
+        Txbuffer[7] = SW_RESYNC_CHAR;
+        printf("[Protocol] Read pin %d data[%d]: %02X %02X %02X %02X %02X\n", 
+               pin, index, data[0], data[1], data[2], data[3], data[4]);
+    } else {
+        SW_Protocol_SendError(SW_ERROR_INVALID_PIN);
+        Stats.invalid_commands++;
     }
-    
-    printf("[Protocol] Read public data: pin=%d (returning 0)\n", pin);
 }
 
 static void ProcessWritePublicData(uint8_t command) {
-    // TODO: Implement in Step 4
-    // Extract pin number and value
+    // Write public data to pin's buffer
+    // Command: 0x91-0x9F (pin 1-15)
     uint8_t pin = command - WRITE_PUBLIC_DATA_0;
-    uint16_t value = (Rxbuffer[2] << 8) | Rxbuffer[1];
+    uint16_t index = (Rxbuffer[1] << 8) | Rxbuffer[2];
+    const uint8_t* data = &Rxbuffer[3];  // 5 bytes of data
     
-    // For now, just acknowledge
-    for (int i = 1; i < SW_PACKET_SIZE; i++) {
-        Txbuffer[i] = SW_RESYNC_CHAR;
+    if (SW_PinRegisters_WritePublicData(pin, index, data, 5) == SW_OK) {
+        // Success - acknowledge
+        Txbuffer[0] = command;
+        Txbuffer[1] = Rxbuffer[1];  // Echo index high byte
+        Txbuffer[2] = Rxbuffer[2];  // Echo index low byte
+        // Pad remaining bytes
+        for (int i = 3; i < SW_PACKET_SIZE; i++) {
+            Txbuffer[i] = SW_RESYNC_CHAR;
+        }
+        printf("[Protocol] Write pin %d data[%d]: %02X %02X %02X %02X %02X\n", 
+               pin, index, data[0], data[1], data[2], data[3], data[4]);
+    } else {
+        SW_Protocol_SendError(SW_ERROR_INVALID_PIN);
+        Stats.invalid_commands++;
     }
-    
-    printf("[Protocol] Write public data: pin=%d, value=0x%04X (acknowledged)\n", pin, value);
 }
 
 static void ProcessSystemCommand(uint8_t command) {
-    // TODO: Implement in Step 4
     switch (command) {
         case CMD_VERSION:
-            // Return version info
+            // Return version info: ESP32-S3 v0.1
             Txbuffer[1] = 'E';  // ESP32
-            Txbuffer[2] = '3';  // ESP32-S3
+            Txbuffer[2] = '3';
             Txbuffer[3] = '2';
             Txbuffer[4] = 'S';
             Txbuffer[5] = '3';
-            Txbuffer[6] = 0x00;
-            Txbuffer[7] = 0x01;  // Version 0.1
-            printf("[Protocol] Version query\n");
+            Txbuffer[6] = 0x00;  // Major version
+            Txbuffer[7] = 0x01;  // Minor version
+            printf("[Protocol] Version query: ESP32-S3 v0.1\n");
             break;
             
         case CMD_RESET:
-            printf("[Protocol] Reset command (not implemented)\n");
+            printf("[Protocol] Reset command (acknowledged, not executed)\n");
             for (int i = 1; i < SW_PACKET_SIZE; i++) {
                 Txbuffer[i] = SW_RESYNC_CHAR;
             }
+            // Note: Actual reset would happen after response sent
+            break;
+            
+        case 0xF8:  // PIN_COUNT command
+            Txbuffer[1] = SW_PinRegisters_GetPinCount();  // 22 pins
+            for (int i = 2; i < SW_PACKET_SIZE; i++) {
+                Txbuffer[i] = SW_RESYNC_CHAR;
+            }
+            printf("[Protocol] Pin count query: %d pins\n", SW_PinRegisters_GetPinCount());
             break;
             
         default:
