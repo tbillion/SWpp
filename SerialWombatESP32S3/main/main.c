@@ -18,6 +18,7 @@
 
 #include "hw_abstraction/esp32_gpio.h"
 #include "hw_abstraction/esp32_timers.h"
+#include "hw_abstraction/esp32_uart.h"
 
 static const char* TAG = "SW_MAIN";
 
@@ -224,6 +225,93 @@ void test_timer_stats(void) {
     ESP_LOGI(TAG, "  Max exec time: %lu us", stats.max_exec_time_us);
 }
 
+/**
+ * @brief Test UART initialization
+ */
+void test_uart_init(void) {
+    ESP_LOGI(TAG, "Testing UART initialization");
+    
+    // UART should already be initialized from ESP32_UART_Init()
+    if (ESP32_UART_IsInitialized(ESP32_UART0)) {
+        ESP_LOGI(TAG, "  UART0: Initialized (TX=%d, RX=%d, Baud=%d)",
+                 ESP32_UART0_TX_PIN, ESP32_UART0_RX_PIN, ESP32_UART_DEFAULT_BAUD);
+    } else {
+        ESP_LOGW(TAG, "  UART0: NOT initialized");
+    }
+    
+    if (ESP32_UART_IsInitialized(ESP32_UART1)) {
+        ESP_LOGI(TAG, "  UART1: Initialized (TX=%d, RX=%d, Baud=%d)",
+                 ESP32_UART1_TX_PIN, ESP32_UART1_RX_PIN, ESP32_UART_DEFAULT_BAUD);
+    } else {
+        ESP_LOGW(TAG, "  UART1: NOT initialized");
+    }
+    
+    ESP_LOGI(TAG, "UART initialization test complete");
+}
+
+/**
+ * @brief Test UART echo functionality
+ */
+void test_uart_echo(void) {
+    ESP_LOGI(TAG, "Starting UART echo test on UART0");
+    ESP_LOGI(TAG, "Type characters (test will read for 5 seconds)...");
+    
+    uint8_t buffer[128];
+    size_t total_echoed = 0;
+    
+    // Read and echo for 5 seconds
+    uint64_t start_time = esp_timer_get_time();
+    while ((esp_timer_get_time() - start_time) < 5000000) {
+        size_t available = ESP32_UART_Available(ESP32_UART0);
+        if (available > 0) {
+            // Read data
+            size_t to_read = (available > sizeof(buffer)) ? sizeof(buffer) : available;
+            size_t read = ESP32_UART_Read(ESP32_UART0, buffer, to_read);
+            
+            if (read > 0) {
+                // Echo it back
+                ESP32_UART_Write(ESP32_UART0, buffer, read);
+                total_echoed += read;
+            }
+        }
+        
+        // Small delay to prevent tight loop
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    
+    ESP_LOGI(TAG, "UART echo test complete:");
+    ESP_LOGI(TAG, "  Echoed %zu characters", total_echoed);
+}
+
+/**
+ * @brief Test UART statistics
+ */
+void test_uart_stats(void) {
+    ESP_LOGI(TAG, "Testing UART statistics");
+    
+    ESP32_UART_Stats_t stats0, stats1;
+    
+    if (ESP32_UART_GetStats(ESP32_UART0, &stats0) == ESP_OK) {
+        ESP_LOGI(TAG, "UART0 statistics:");
+        ESP_LOGI(TAG, "  TX bytes: %lu", stats0.tx_bytes);
+        ESP_LOGI(TAG, "  RX bytes: %lu", stats0.rx_bytes);
+        ESP_LOGI(TAG, "  Overflows: %lu", stats0.rx_overflows);
+        ESP_LOGI(TAG, "  Errors: PE=%lu, FE=%lu, BRK=%lu",
+                 stats0.parity_errors, stats0.frame_errors, stats0.break_conditions);
+    }
+    
+    if (ESP32_UART_GetStats(ESP32_UART1, &stats1) == ESP_OK) {
+        ESP_LOGI(TAG, "UART1 statistics:");
+        ESP_LOGI(TAG, "  TX bytes: %lu", stats1.tx_bytes);
+        ESP_LOGI(TAG, "  RX bytes: %lu", stats1.rx_bytes);
+        ESP_LOGI(TAG, "  Overflows: %lu", stats1.rx_overflows);
+        ESP_LOGI(TAG, "  Errors: PE=%lu, FE=%lu, BRK=%lu",
+                 stats1.parity_errors, stats1.frame_errors, stats1.break_conditions);
+    }
+    
+    ESP_LOGI(TAG, "UART statistics test complete");
+}
+
 void app_main(void)
 {
     ESP_LOGI(TAG, "Serial Wombat ESP32-S3 Port");
@@ -255,6 +343,14 @@ void app_main(void)
         return;
     }
     
+    // Initialize UART subsystem
+    ESP_LOGI(TAG, "Initializing UART subsystem...");
+    ret = ESP32_UART_Init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "UART initialization failed!");
+        return;
+    }
+    
     // Run GPIO tests
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "=== GPIO TESTS ===");
@@ -281,10 +377,25 @@ void app_main(void)
     test_timer_stats();
     ESP_LOGI(TAG, "");
     
+    // Run UART tests
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "=== UART TESTS ===");
+    
+    test_uart_init();
+    ESP_LOGI(TAG, "");
+    
+    test_uart_echo();
+    ESP_LOGI(TAG, "");
+    
+    test_uart_stats();
+    ESP_LOGI(TAG, "");
+    
     ESP_LOGI(TAG, "================================");
     ESP_LOGI(TAG, "All HAL tests complete!");
-    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers complete");
-    ESP_LOGI(TAG, "Next: UART abstraction (esp32_uart.c/h)");
+    ESP_LOGI(TAG, "Phase 2 progress: GPIO + Timers + UART complete (42%%)");
+    ESP_LOGI(TAG, "Next: I2C abstraction (esp32_i2c.c/h)");
+    ESP_LOGI(TAG, "Note: Build with ESP-IDF 5.x to test on hardware");
+    ESP_LOGI(TAG, "  $ idf.py build flash monitor");
     
     // Main loop (for now, just idle)
     while (1) {
