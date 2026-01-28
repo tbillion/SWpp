@@ -1,0 +1,19 @@
+# Serial Wombat ESP32-S3 Partition Table
+# 16MB Flash Layout
+#
+# Name,       Type, SubType, Offset,   Size,     Flags
+# Bootloader is automatically placed at 0x1000 (4KB)
+# Partition table is at 0x8000 (32KB)
+
+# NVS for configuration storage
+nvs,          data, nvs,     0x9000,   0x6000,
+# PHY init data
+phy_init,     data, phy,     0xf000,   0x1000,
+# Factory application
+factory,      app,  factory, 0x10000,  0xE00000,
+# OTA data (for future OTA updates)
+otadata,      data, ota,     0xE10000, 0x2000,
+# OTA_0 partition (for future OTA updates)
+ota_0,        app,  ota_0,   0xE12000, 0x700000,
+# NVS user data (for Serial Wombat user buffer, calibration, etc.)
+nvs_user,     data, nvs,     0x1512000, 0xAE000,
