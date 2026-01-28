@@ -10,9 +10,9 @@ set(COMPONENT_SRCS
     "hw_abstraction/esp32_adc.c"
     "hw_abstraction/esp32_dma.c"
     "hw_abstraction/esp32_system.c"
-    # To be added in Phase 3:
-    # "core/main_loop.c"
-    # "core/protocol.c"
+    # Phase 3: Core Firmware
+    "core/protocol.c"
+    # To be added in Phase 3 Step 4+:
     # "core/pinRegisters.c"
 )
 
